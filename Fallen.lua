@@ -34,6 +34,7 @@ local default_settings = T{
     target_name = '';
     alert_distance = 15;
     show_gui = false;
+    alert_message = '%s has fallen and can\'t get up!';
 }
 
 -- Load settings
@@ -229,7 +230,19 @@ local function render_gui()
             alert_triggered = false  -- Reset alert when distance changes
         end
         imgui.PopItemWidth()
-        
+
+        imgui.Spacing()
+
+        -- Alert message input
+        imgui.Text('Alert Message:')
+        imgui.TextColored({0.6, 0.6, 0.6, 1.0}, '(Use %s where the player name should appear)')
+        local message_buffer = {config.get('alert_message')}
+        imgui.PushItemWidth(200)
+        if imgui.InputText('##alertmessage', message_buffer, 128) then
+            config.set('alert_message', message_buffer[1])
+        end
+        imgui.PopItemWidth()
+
         imgui.Spacing()
         imgui.Separator()
         imgui.Spacing()
@@ -300,8 +313,9 @@ local function monitor_distance()
         if not alert_triggered then
             play_alert_sound()
             alert_triggered = true
+            local alert_message = config.get('alert_message')
             print(chat.header(addon.name):append(chat.error(
-                string.format('%s has fallen and can\'t get up!', target_name)
+                string.format(alert_message, target_name)
             )))
         end
     else
