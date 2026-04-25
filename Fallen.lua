@@ -41,7 +41,7 @@ local default_settings = T{
     circle_x = 200;
     circle_y = 200;
     play_alert_sound = true;
-    selected_sound = 'im-fallen-and-i-cant-get-up.wav';
+    selected_sound = 'ive-fallen-and-i-cant-get-up.wav';
     show_chat_alert = true;
     chat_alert_message = '%s has fallen and can\'t get up!';
 }
