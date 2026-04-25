@@ -40,6 +40,8 @@ local default_settings = T{
     circle_text_size = 1.0;
     circle_x = 200;
     circle_y = 200;
+    play_alert_sound = true;
+    selected_sound = 'im-fallen-and-i-cant-get-up.wav';
 }
 
 -- Load settings
@@ -80,6 +82,10 @@ local alert_triggered = false
 local cached_entity_index = nil
 local cached_entity_name = ''
 
+-- Sound files cache
+local available_sounds = {}
+local sound_names = {}
+
 -- Frame throttling counters
 local distance_check_frame_counter = 0
 local entity_scan_frame_counter = 0
@@ -94,9 +100,42 @@ local entity_scan_frame_counter = 0
     Sound Functions
 ]]--
 
--- Play the Fallen.wav sound alert
+-- Scan sounds folder for available .wav files
+local function scan_sound_files()
+    available_sounds = {}
+    sound_names = {}
+    
+    local sounds_path = string.format('%s\\sounds', addon.path)
+    local files = ashita.fs.get_dir(sounds_path, '.*\\.wav', false)
+    
+    if files then
+        for _, file in ipairs(files) do
+            -- Extract just the filename from the full path
+            local filename = file:match('([^\\]+)$')
+            if filename then
+                table.insert(available_sounds, filename)
+                -- Remove .wav extension for display
+                local display_name = filename:gsub('\\.wav$', '')
+                table.insert(sound_names, display_name)
+            end
+        end
+    end
+    
+    -- Sort alphabetically for easier browsing
+    table.sort(available_sounds)
+    table.sort(sound_names)
+end
+
+-- Play the selected sound alert
 local function play_alert_sound()
-    local sound_path = string.format('%s\\Fallen.wav', addon.path)
+    local selected = config.get('selected_sound')
+    local sound_path = string.format('%s\\sounds\\%s', addon.path, selected)
+    ashita.misc.play_sound(sound_path)
+end
+
+-- Play a specific sound file (for testing)
+local function play_sound_file(filename)
+    local sound_path = string.format('%s\\sounds\\%s', addon.path, filename)
     ashita.misc.play_sound(sound_path)
 end
 
@@ -267,15 +306,23 @@ local function render_gui()
         imgui.PopItemWidth()
         
         imgui.Spacing()
+        imgui.Separator()
+        imgui.Spacing()
         
-        -- Circle size and text size controls (shown above checkbox when enabled)
+        -- Circle overlay checkbox
         local show_circle = config.get('show_circle')
+        local show_circle_buffer = {show_circle}
+        if imgui.Checkbox('Circle Overlay', show_circle_buffer) then
+            config.set('show_circle', show_circle_buffer[1])
+        end
+        
+        -- Circle size and text size controls (shown when enabled)
         if show_circle then
             -- Text labels on same line
-            imgui.Text('Circle Size')
+            imgui.Text('Size')
             imgui.SameLine()
             imgui.SetCursorPosX(170)
-            imgui.Text('Text Size')
+            imgui.Text('Text')
             
             -- Sliders on same line below
             local size_buffer = {config.get('circle_max_size')}
@@ -296,10 +343,42 @@ local function render_gui()
             imgui.Spacing()
         end
         
-        -- Circle overlay checkbox
-        local show_circle_buffer = {show_circle}
-        if imgui.Checkbox('Circle Overlay', show_circle_buffer) then
-            config.set('show_circle', show_circle_buffer[1])
+        imgui.Spacing()
+        imgui.Separator()
+        imgui.Spacing()
+        
+        -- Alert Sound checkbox
+        local play_sound = config.get('play_alert_sound')
+        local play_sound_buffer = {play_sound}
+        if imgui.Checkbox('Alert Sound', play_sound_buffer) then
+            config.set('play_alert_sound', play_sound_buffer[1])
+        end
+        
+        -- Sound selection dropdown (shown when Alert Sound is checked)
+        if play_sound then
+            if #available_sounds > 0 then
+                -- Find current selection index
+                local selected_sound = config.get('selected_sound')
+                local current_idx = 0
+                for i, sound in ipairs(available_sounds) do
+                    if sound == selected_sound then
+                        current_idx = i - 1  -- ImGui uses 0-based indexing
+                        break
+                    end
+                end
+                
+                -- Sound dropdown
+                local idx_buffer = {current_idx}
+                imgui.PushItemWidth(310)
+                if imgui.Combo('##soundselect', idx_buffer, sound_names, #sound_names) then
+                    local new_sound = available_sounds[idx_buffer[1] + 1]  -- Convert back to 1-based
+                    config.set('selected_sound', new_sound)
+                    play_sound_file(new_sound)  -- Play sound when selected
+                end
+                imgui.PopItemWidth()
+            else
+                imgui.TextColored({1.0, 0.4, 0.4, 1.0}, 'No .wav files found in sounds folder')
+            end
         end
         
         imgui.End()
@@ -447,7 +526,10 @@ local function monitor_distance()
     if distance > threshold then
         -- Play alert only once when threshold is first exceeded
         if not alert_triggered then
-            play_alert_sound()
+            -- Only play sound if alert sound is enabled
+            if config.get('play_alert_sound') then
+                play_alert_sound()
+            end
             alert_triggered = true
             print(chat.header(addon.name):append(chat.error(
                 string.format('%s has fallen and can\'t get up!', target_name)
@@ -490,6 +572,9 @@ end)
 
 -- Load event
 ashita.events.register('load', 'load_cb', function ()
+    -- Scan available sound files
+    scan_sound_files()
+    
     print(chat.header(addon.name):append(chat.message('Loaded! Use /fallen to configure')))
 end)
 
