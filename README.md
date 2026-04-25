@@ -75,7 +75,7 @@ To add your own alert sounds:
 3. Your sounds will appear in the sound selector dropdown
 4. Select any sound to preview it instantly
 
-The default sound is `im-fallen-and-i-cant-get-up.wav`.
+The default sound is `ive-fallen-and-i-cant-get-up.wav`.
 
 ## Notes
 
