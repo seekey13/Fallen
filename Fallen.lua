@@ -1,13 +1,14 @@
 
 --[[
-Fallen - Distance Alert Addon
-Monitors distance to a specific player and plays a sound alert when threshold is exceeded.
+Fallen - Distance Alert and Visual Indicator Addon
+Monitors distance to a specific player, plays a sound alert when threshold is exceeded,
+and displays an expanding circle overlay that grows based on distance.
 ]]--
 
 addon.name      = 'Fallen'
 addon.author    = 'Seekey'
 addon.version   = '1.0'
-addon.desc      = 'Let me know when my alt is stuck'
+addon.desc      = 'Track your alt with distance alerts and expanding circle overlay'
 addon.link      = 'https://github.com/seekey13/Fallen'
 
 require('common')
@@ -34,6 +35,11 @@ local default_settings = T{
     target_name = '';
     alert_distance = 15;
     show_gui = false;
+    show_circle = false;
+    circle_max_size = 20;
+    circle_text_size = 1.0;
+    circle_x = 200;
+    circle_y = 200;
 }
 
 -- Load settings
@@ -77,6 +83,12 @@ local cached_entity_name = ''
 -- Frame throttling counters
 local distance_check_frame_counter = 0
 local entity_scan_frame_counter = 0
+
+--[[
+    circle Helper Functions
+]]--
+
+-- (Bearing calculation removed - not needed for expanding circle display)
 
 --[[
     Sound Functions
@@ -208,22 +220,46 @@ local function render_gui()
     
     local is_open = {true}
     if imgui.Begin('Fallen', is_open, ImGuiWindowFlags_AlwaysAutoResize) then
-        -- Player name input
-        imgui.Text('Player Name:')
+        -- Status display (first row)
+        local target_name = config.get('target_name')
+        if target_name ~= '' then
+            local distance, error_msg = get_distance_to_entity(target_name)
+            if error_msg then
+                imgui.TextColored({1.0, 0.4, 0.4, 1.0}, error_msg)
+            elseif distance then
+                local threshold = config.get('alert_distance')
+                if distance > threshold then
+                    imgui.TextColored({1.0, 0.4, 0.4, 1.0}, string.format('%.1f yalms', distance))
+                else
+                    imgui.TextColored({0.4, 1.0, 0.4, 1.0}, string.format('%.1f yalms', distance))
+                end
+            end
+        else
+            imgui.Text('No target set')
+        end
+        
+        imgui.Spacing()
+        imgui.Separator()
+        imgui.Spacing()
+        
+        -- Text labels on same line
+        imgui.Text('Player Name')
+        imgui.SameLine()
+        imgui.SetCursorPosX(170)
+        imgui.Text('Alert Distance')
+        
+        -- Controls on same line below
         local name_buffer = {config.get('target_name')}
-        imgui.PushItemWidth(200)
+        imgui.PushItemWidth(150)
         if imgui.InputText('##targetname', name_buffer, 32) then
             config.set('target_name', name_buffer[1])
             alert_triggered = false  -- Reset alert when name changes
         end
         imgui.PopItemWidth()
         
-        imgui.Spacing()
-        
-        -- Distance slider
-        imgui.Text('Alert Distance:')
+        imgui.SameLine()
         local distance_buffer = {config.get('alert_distance')}
-        imgui.PushItemWidth(200)
+        imgui.PushItemWidth(150)
         if imgui.SliderInt('##alertdistance', distance_buffer, MIN_ALERT_DISTANCE, MAX_ALERT_DISTANCE) then
             config.set('alert_distance', distance_buffer[1])
             alert_triggered = false  -- Reset alert when distance changes
@@ -231,25 +267,39 @@ local function render_gui()
         imgui.PopItemWidth()
         
         imgui.Spacing()
-        imgui.Separator()
-        imgui.Spacing()
         
-        -- Status display
-        local target_name = config.get('target_name')
-        if target_name ~= '' then
-            local distance, error_msg = get_distance_to_entity(target_name)
-            if error_msg then
-                imgui.TextColored({1.0, 0.4, 0.4, 1.0}, error_msg)
-            else
-                local threshold = config.get('alert_distance')
-                if distance > threshold then
-                    imgui.TextColored({1.0, 0.4, 0.4, 1.0}, string.format('Distance: %.1f yalms', distance))
-                else
-                    imgui.TextColored({0.4, 1.0, 0.4, 1.0}, string.format('Distance: %.1f yalms', distance))
-                end
+        -- Circle size and text size controls (shown above checkbox when enabled)
+        local show_circle = config.get('show_circle')
+        if show_circle then
+            -- Text labels on same line
+            imgui.Text('Circle Size')
+            imgui.SameLine()
+            imgui.SetCursorPosX(170)
+            imgui.Text('Text Size')
+            
+            -- Sliders on same line below
+            local size_buffer = {config.get('circle_max_size')}
+            imgui.PushItemWidth(150)
+            if imgui.SliderInt('##circlesize', size_buffer, 10, 50) then
+                config.set('circle_max_size', size_buffer[1])
             end
-        else
-            imgui.Text('Enter a player name to monitor')
+            imgui.PopItemWidth()
+            
+            imgui.SameLine()
+            local text_size_buffer = {config.get('circle_text_size')}
+            imgui.PushItemWidth(150)
+            if imgui.SliderFloat('##textsize', text_size_buffer, 0.5, 2.0, '%.1f') then
+                config.set('circle_text_size', text_size_buffer[1])
+            end
+            imgui.PopItemWidth()
+            
+            imgui.Spacing()
+        end
+        
+        -- Circle overlay checkbox
+        local show_circle_buffer = {show_circle}
+        if imgui.Checkbox('Circle Overlay', show_circle_buffer) then
+            config.set('show_circle', show_circle_buffer[1])
         end
         
         imgui.End()
@@ -258,6 +308,105 @@ local function render_gui()
     -- Handle window close
     if not is_open[1] then
         config.set('show_gui', false)
+    end
+end
+
+-- Render the expanding circle overlay
+local function render_circle()
+    if not config.get('show_circle') then
+        return
+    end
+    
+    local target_name = config.get('target_name')
+    if target_name == '' then
+        return
+    end
+    
+    -- Get player and target entities
+    local player = GetPlayerEntity()
+    if not player then
+        return
+    end
+    
+    local target = get_entity_by_name(target_name)
+    if not target then
+        return
+    end
+    
+    -- Calculate distance
+    local distance = calculate_distance(player, target)
+    if not distance then
+        return
+    end
+    
+    -- circle window setup
+    local windowW = 200
+    local windowH = 200
+    
+    imgui.SetNextWindowPos({ config.get('circle_x'), config.get('circle_y') }, ImGuiCond_FirstUseEver)
+    imgui.SetNextWindowSize({ windowW, windowH })
+    imgui.SetNextWindowSizeConstraints({ windowW, windowH }, { windowW, windowH })
+    
+    local windowFlags = bit.bor(
+        ImGuiWindowFlags_NoDecoration,
+        ImGuiWindowFlags_NoResize,
+        ImGuiWindowFlags_NoBackground,
+        ImGuiWindowFlags_NoBringToFrontOnFocus,
+        ImGuiWindowFlags_NoFocusOnAppearing
+    )
+    
+    if imgui.Begin('Fallencircle', true, windowFlags) then
+        local posX, posY = imgui.GetCursorScreenPos()
+        local centerX = windowW / 2 + posX
+        local centerY = windowH / 2 + posY
+        
+        -- Distance-based circle sizing
+        -- Circle grows from 1px at 0 yalms to max_size at threshold, then stops
+        local threshold = config.get('alert_distance')
+        local min_radius = 1  -- 1px at 0 yalms
+        local max_radius = config.get('circle_max_size')  -- User-defined max size in px
+        
+        -- Calculate radius based on distance (grows linearly up to threshold)
+        local radius
+        if distance >= threshold then
+            radius = max_radius  -- Stop growing at threshold
+        else
+            radius = min_radius + (distance / threshold) * (max_radius - min_radius)
+        end
+        
+        -- Distance-based color coding
+        local circle_color
+        if distance < threshold then
+            circle_color = { 0.4, 1.0, 0.4, 0.6 }  -- Green (semi-transparent)
+        else
+            circle_color = { 1.0, 0.4, 0.4, 0.6 }  -- Red when threshold met or exceeded
+        end
+        
+        -- Draw expanding circle
+        imgui.GetWindowDrawList():AddCircleFilled(
+            { centerX, centerY },
+            radius,
+            imgui.GetColorU32(circle_color),
+            32
+        )
+        
+        -- Only show distance text when threshold is met or exceeded
+        if distance >= threshold then
+            local distance_text = string.format('%.1f', distance)
+            
+            -- Apply text size scaling
+            local text_scale = config.get('circle_text_size')
+            local text_width = 40 * text_scale
+            local text_height = 15 * text_scale
+            
+            -- Draw distance text in white, centered in the circle
+            imgui.SetCursorScreenPos({ centerX - text_width / 2 + 2, centerY - text_height / 2 })
+            imgui.SetWindowFontScale(text_scale)
+            imgui.TextColored({ 1.0, 1.0, 1.0, 1.0 }, distance_text)
+            imgui.SetWindowFontScale(1.0)  -- Reset font scale
+        end
+        
+        imgui.End()
     end
 end
 
@@ -341,7 +490,7 @@ end)
 
 -- Load event
 ashita.events.register('load', 'load_cb', function ()
-    print(chat.header(addon.name):append(chat.message('Loaded! Use /fallen to open configuration panel')))
+    print(chat.header(addon.name):append(chat.message('Loaded! Use /fallen to configure')))
 end)
 
 -- Unload event
@@ -353,6 +502,9 @@ end)
 ashita.events.register('d3d_present', 'present_cb', function ()
     -- Render GUI
     render_gui()
+    
+    -- Render expanding circle overlay
+    render_circle()
     
     -- Monitor distance and trigger alerts
     monitor_distance()
