@@ -42,6 +42,8 @@ local default_settings = T{
     circle_y = 200;
     play_alert_sound = true;
     selected_sound = 'im-fallen-and-i-cant-get-up.wav';
+    show_chat_alert = true;
+    chat_alert_message = '%s has fallen and can\'t get up!';
 }
 
 -- Load settings
@@ -347,14 +349,14 @@ local function render_gui()
         imgui.Separator()
         imgui.Spacing()
         
-        -- Alert Sound checkbox
+        -- Sound Alert checkbox
         local play_sound = config.get('play_alert_sound')
         local play_sound_buffer = {play_sound}
-        if imgui.Checkbox('Alert Sound', play_sound_buffer) then
+        if imgui.Checkbox('Sound Alert', play_sound_buffer) then
             config.set('play_alert_sound', play_sound_buffer[1])
         end
         
-        -- Sound selection dropdown (shown when Alert Sound is checked)
+        -- Sound selection dropdown (shown when Sound Alert is checked)
         if play_sound then
             if #available_sounds > 0 then
                 -- Find current selection index
@@ -379,6 +381,28 @@ local function render_gui()
             else
                 imgui.TextColored({1.0, 0.4, 0.4, 1.0}, 'No .wav files found in sounds folder')
             end
+        end
+        
+        imgui.Spacing()
+        imgui.Separator()
+        imgui.Spacing()
+        
+        -- Chat Alert checkbox
+        local show_chat = config.get('show_chat_alert')
+        local show_chat_buffer = {show_chat}
+        if imgui.Checkbox('Chat Alert', show_chat_buffer) then
+            config.set('show_chat_alert', show_chat_buffer[1])
+        end
+        
+        -- Chat message text field (shown when Chat Alert is checked)
+        if show_chat then
+            imgui.Text('Message (%%s = Player Name)')
+            local message_buffer = {config.get('chat_alert_message')}
+            imgui.PushItemWidth(310)
+            if imgui.InputText('##chatmessage', message_buffer, 256) then
+                config.set('chat_alert_message', message_buffer[1])
+            end
+            imgui.PopItemWidth()
         end
         
         imgui.End()
@@ -531,9 +555,13 @@ local function monitor_distance()
                 play_alert_sound()
             end
             alert_triggered = true
-            print(chat.header(addon.name):append(chat.error(
-                string.format('%s has fallen and can\'t get up!', target_name)
-            )))
+            -- Only show chat alert if enabled
+            if config.get('show_chat_alert') then
+                local message = config.get('chat_alert_message')
+                print(chat.header(addon.name):append(chat.error(
+                    string.format(message, target_name)
+                )))
+            end
         end
     else
         -- Reset alert when distance drops below threshold
