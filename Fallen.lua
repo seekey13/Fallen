@@ -520,20 +520,20 @@ end
 -- Monitor distance and trigger alerts with frame throttling for efficiency
 -- Called every frame but only processes every DISTANCE_CHECK_INTERVAL frames
 local function monitor_distance()
+    local target_name = config.get('target_name')
+    
+    -- Skip if no target name is set (exit early to save resources)
+    if target_name == '' then
+        alert_triggered = false
+        return
+    end
+    
     -- Throttle distance checks to reduce CPU usage (~6 checks per second at 60 FPS)
     distance_check_frame_counter = distance_check_frame_counter + 1
     if distance_check_frame_counter < DISTANCE_CHECK_INTERVAL then
         return
     end
     distance_check_frame_counter = 0
-    
-    local target_name = config.get('target_name')
-    
-    -- Skip if no target name is set
-    if target_name == '' then
-        alert_triggered = false
-        return
-    end
     
     -- Get distance to target
     local distance, error_msg = get_distance_to_entity(target_name)
