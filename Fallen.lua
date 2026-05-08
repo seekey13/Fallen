@@ -79,6 +79,8 @@ end
 
 -- Alert tracking
 local alert_triggered = false
+local last_alert_time = 0
+local ALERT_COOLDOWN = 5  -- Seconds between alerts
 
 -- Entity caching for performance
 local cached_entity_index = nil
@@ -295,6 +297,7 @@ local function render_gui()
         if imgui.InputText('##targetname', name_buffer, 32) then
             config.set('target_name', name_buffer[1])
             alert_triggered = false  -- Reset alert when name changes
+            last_alert_time = 0
         end
         imgui.PopItemWidth()
         
@@ -304,6 +307,7 @@ local function render_gui()
         if imgui.SliderInt('##alertdistance', distance_buffer, MIN_ALERT_DISTANCE, MAX_ALERT_DISTANCE) then
             config.set('alert_distance', distance_buffer[1])
             alert_triggered = false  -- Reset alert when distance changes
+            last_alert_time = 0
         end
         imgui.PopItemWidth()
         
@@ -525,6 +529,7 @@ local function monitor_distance()
     -- Skip if no target name is set (exit early to save resources)
     if target_name == '' then
         alert_triggered = false
+        last_alert_time = 0
         return
     end
     
@@ -541,20 +546,25 @@ local function monitor_distance()
     -- Skip if target not found or error
     if error_msg then
         alert_triggered = false
+        last_alert_time = 0
         return
     end
     
     local threshold = config.get('alert_distance')
     
+    -- Get current time
+    local current_time = os.time()
+    
     -- Check if distance exceeds threshold
     if distance > threshold then
-        -- Play alert only once when threshold is first exceeded
-        if not alert_triggered then
+        -- Play alert only if cooldown has passed
+        if not alert_triggered or (current_time - last_alert_time) >= ALERT_COOLDOWN then
             -- Only play sound if alert sound is enabled
             if config.get('play_alert_sound') then
                 play_alert_sound()
             end
             alert_triggered = true
+            last_alert_time = current_time
             -- Only show chat alert if enabled
             if config.get('show_chat_alert') then
                 local message = config.get('chat_alert_message')
@@ -564,8 +574,10 @@ local function monitor_distance()
             end
         end
     else
-        -- Reset alert when distance drops below threshold
-        alert_triggered = false
+        -- Only reset alert after cooldown period has passed
+        if alert_triggered and (current_time - last_alert_time) >= ALERT_COOLDOWN then
+            alert_triggered = false
+        end
     end
 end
 
