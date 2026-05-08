@@ -272,9 +272,9 @@ local function render_gui()
             elseif distance then
                 local threshold = config.get('alert_distance')
                 if distance > threshold then
-                    imgui.TextColored({1.0, 0.4, 0.4, 1.0}, string.format('%.1f yalms', distance))
+                    imgui.TextColored({1.0, 0.4, 0.4, 1.0}, string.format('%.0f yalms', distance))
                 else
-                    imgui.TextColored({0.4, 1.0, 0.4, 1.0}, string.format('%.1f yalms', distance))
+                    imgui.TextColored({0.4, 1.0, 0.4, 1.0}, string.format('%.0f yalms', distance))
                 end
             end
         else
@@ -499,16 +499,19 @@ local function render_circle()
         
         -- Only show distance text when threshold is met or exceeded
         if distance >= threshold then
-            local distance_text = string.format('%.1f', distance)
+            local distance_text = string.format('%.0f', distance)
             
             -- Apply text size scaling
             local text_scale = config.get('circle_text_size')
-            local text_width = 40 * text_scale
-            local text_height = 15 * text_scale
+            
+            -- Calculate actual text size for proper centering
+            imgui.SetWindowFontScale(text_scale)
+            local text_size = imgui.CalcTextSize(distance_text)
+            local text_width = text_size.x
+            local text_height = text_size.y
             
             -- Draw distance text in white, centered in the circle
-            imgui.SetCursorScreenPos({ centerX - text_width / 2 + 2, centerY - text_height / 2 })
-            imgui.SetWindowFontScale(text_scale)
+            imgui.SetCursorScreenPos({ centerX - text_width / 2, centerY - text_height / 2 })
             imgui.TextColored({ 1.0, 1.0, 1.0, 1.0 }, distance_text)
             imgui.SetWindowFontScale(1.0)  -- Reset font scale
         end
